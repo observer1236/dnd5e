@@ -3498,9 +3498,9 @@ export default class Actor5e extends SystemDocumentMixin(Actor) {
   async _onCreateDescendantDocuments(parent, collection, documents, data, options, userId) {
     super._onCreateDescendantDocuments(parent, collection, documents, data, options, userId);
     if ( userId === game.userId ) {
-      if ( (collection === "effects") && documents.find(d => d.id === ActiveEffect5e.ID.EXHAUSTION)
-        && !this._source.system.attributes?.exhaustion ) {
-        await this.update({ "system.attributes.exhaustion": 1 });
+      const exhaustion = collection === "effects" ? documents.find(d => d.id === ActiveEffect5e.ID.EXHAUSTION) : null;
+      if ( exhaustion && !this._source.system.attributes?.exhaustion ) {
+        await this.update({ "system.attributes.exhaustion": exhaustion.system.level });
       }
       if ( collection === "items" ) await this.updateEncumbrance(options);
     }

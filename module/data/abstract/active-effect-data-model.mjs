@@ -142,31 +142,90 @@ export default class ActiveEffectDataModel extends foundry.data.ActiveEffectType
   /* -------------------------------------------- */
 
   /**
+   * Conditions applied separately by this effect, including riders of its statuses.
+   * @type {Set<string>}
+   */
+  get riderStatuses() {
+    const riders = new Set(this.rider?.statuses ?? []);
+    for ( const status of this.parent.statuses ) {
+      for ( const id of CONFIG.statusEffects[status]?.riders ?? [] ) riders.add(id);
+    }
+    return riders;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
    * Handle creating rider documents when this active effect is created.
    * @param {DatabaseOperation} [options={}]       Options passed to the create or update operation.
+   * @param {Map<Actor, Map<string, object>>} [pending]  Conditions already queued by the same operation.
    * @returns {Promise<DatabaseWriteOperation[]>}  Batch entries suitable for `foundry.documents.modifyBatch`.
    */
-  async collectRiders(options={}) {
-    if ( !(this.parent.target instanceof Actor) ) return [];
+  async collectRiders(options={}, pending=new Map()) {
+    if ( !(this.parent.target instanceof Actor) || !this.parent.active ) return [];
 
-    const riders = new Set(this.rider?.statuses ?? []);
-
-    for ( const status of this.parent.statuses ) {
-      const r = CONFIG.statusEffects[status]?.riders ?? [];
-      for ( const p of r ) riders.add(p);
-    }
-
+    const riders = this.riderStatuses;
     if ( !riders.size ) return [];
 
-    const createRider = async id => {
-      if ( this.parent.actor.effects.has(staticID(`dnd5e${id}`)) ) return;
-      const effect = await ActiveEffect.implementation.fromStatusEffect(id);
-      return effect.toObject();
-    };
+    const actor = this.parent.actor;
+    const conditions = pending.get(actor) ?? new Map();
+    pending.set(actor, conditions);
+    const data = [];
+    const updates = [];
+    const applied = new Set(this.parent.getFlag("dnd5e", "appliedRiderConditions") ?? []);
+    let appliedConditions = false;
+    for ( const id of riders ) {
+      const maxLevel = CONFIG.DND5E.conditionTypes[id]?.levels;
+      const leveled = Number.isFinite(maxLevel);
+      let condition = conditions.get(id);
+      if ( leveled && (applied.has(id) || condition?.sources.has(this.parent.uuid)) ) continue;
+      if ( condition && !leveled ) continue;
 
-    const data = (await Promise.all(Array.from(riders).map(createRider))).filter(_ => _);
-    if ( !data.length ) return [];
-    return [{ action: "create", documentName: "ActiveEffect", data, parent: this.parent.actor, keepId: true }];
+      const conditionId = staticID(`dnd5e${id}`);
+      const existing = actor.effects.get(conditionId);
+      if ( existing && !leveled ) continue;
+      const create = !existing && !condition;
+      if ( !condition ) {
+        condition = { level: existing?.system.level ?? 1, originalLevel: existing?.system.level, sources: new Set() };
+        conditions.set(id, condition);
+        if ( create ) {
+          const effect = await ActiveEffect.implementation.fromStatusEffect(id);
+          const effectData = effect.toObject();
+          if ( leveled ) effectData.system.level = 1;
+          condition.data = effectData;
+          data.push(effectData);
+        }
+      }
+      if ( !leveled ) continue;
+
+      // Each source grants a level of each condition once, even if it is subsequently edited or re-enabled.
+      condition.sources.add(this.parent.uuid);
+      applied.add(id);
+      appliedConditions = true;
+      const level = Math.clamp(condition.level + (create ? 0 : 1), 1, maxLevel);
+      if ( level === condition.level ) continue;
+      condition.level = level;
+      if ( condition.data ) condition.data.system.level = level;
+      else if ( condition.update ) condition.update["system.level"] = level;
+      else {
+        condition.update = { _id: conditionId, "system.level": level };
+        updates.push({
+          action: "update", documentName: "ActiveEffect", updates: [condition.update], parent: actor,
+          dnd5e: { originalLevel: condition.originalLevel }
+        });
+      }
+    }
+
+    const operations = [];
+    if ( data.length ) operations.push({
+      action: "create", documentName: "ActiveEffect", data, parent: actor, keepId: true
+    });
+    operations.push(...updates);
+    if ( appliedConditions ) operations.push({
+      action: "update", documentName: "ActiveEffect", parent: this.parent.parent,
+      updates: [{ _id: this.parent.id, "flags.dnd5e.appliedRiderConditions": Array.from(applied) }]
+    });
+    return operations;
   }
 
   /* -------------------------------------------- */

@@ -743,6 +743,10 @@ export default class ActiveEffect5e extends DependentDocumentMixin(ActiveEffect)
   /** @inheritDoc */
   async _preCreate(data, options, user) {
     if ( await super._preCreate(data, options, user) === false ) return false;
+    // New and copied sources have not yet granted their leveled conditions.
+    if ( (this.type === "base") || this.system.riderStatuses?.size ) {
+      this.updateSource({ "flags.dnd5e.appliedRiderConditions": [] });
+    }
     if ( options.keepOrigin === false ) this.updateSource({
       origin: null,
       system: {
@@ -775,14 +779,34 @@ export default class ActiveEffect5e extends DependentDocumentMixin(ActiveEffect)
     if ( user.id !== game.userId ) return;
     const batch = [];
     const prompted = new Set();
+    const pending = new Map();
     for ( const effect of documents ) {
       if ( effect._shouldPromptConcentrationEnd() && !prompted.has(effect.parent) ) {
         prompted.add(effect.parent);
         await effect.parent.promptConcentrationEnd();
       }
       if ( effect.active ) {
-        batch.push(...(await effect.system.collectRiders?.(operation) ?? []));
+        batch.push(...(await effect.system.collectRiders?.(operation, pending) ?? []));
       }
+    }
+    if ( batch.length ) await foundry.documents.modifyBatch(batch);
+  }
+
+  /* -------------------------------------------- */
+
+  /** @inheritDoc */
+  static async _onUpdateOperation(documents, operation, user) {
+    await super._onUpdateOperation(documents, operation, user);
+    if ( user.id !== game.userId ) return;
+    const batch = [];
+    const pending = new Map();
+    for ( const effect of documents ) {
+      if ( !effect.active || !(effect.target instanceof Actor) ) continue;
+      const applied = new Set(effect.getFlag("dnd5e", "appliedRiderConditions") ?? []);
+      const unapplied = Array.from(effect.system.riderStatuses ?? [])
+        .some(id => ConditionData.hasLevels(id) && !applied.has(id));
+      if ( !unapplied ) continue;
+      batch.push(...await effect.system.collectRiders(operation, pending));
     }
     if ( batch.length ) await foundry.documents.modifyBatch(batch);
   }
@@ -792,6 +816,11 @@ export default class ActiveEffect5e extends DependentDocumentMixin(ActiveEffect)
   /** @inheritDoc */
   async _preUpdate(changed, options, user) {
     if ( await super._preUpdate(changed, options, user) === false ) return false;
+    // Existing sources predate the application marker; editing them must not grant their levels again.
+    if ( this.getFlag("dnd5e", "appliedRiderConditions") === undefined ) {
+      const applied = Array.from(this.system.riderStatuses ?? []).filter(id => ConditionData.hasLevels(id));
+      if ( applied.length ) foundry.utils.setProperty(changed, "flags.dnd5e.appliedRiderConditions", applied);
+    }
     const expiry = foundry.utils.getProperty(changed, "duration.expiry");
     if ( expiry && !this.expirySupportsDuration(expiry) ) foundry.utils.setProperty(changed, "duration.value", null);
   }
@@ -1338,11 +1367,10 @@ export default class ActiveEffect5e extends DependentDocumentMixin(ActiveEffect)
       + "batch entries rather than creating documents.",
       { since: "DnD5e 6.0", until: "DnD5e 6.2", once: true }
     );
-    const created = [];
-    for ( const { data, keepId, parent } of await this.system.collectRiders?.() ?? [] ) {
-      created.push(...await ActiveEffect5e.createDocuments(data, { keepId, parent }));
-    }
-    return created;
+    const batch = await this.system.collectRiders?.() ?? [];
+    if ( !batch.length ) return [];
+    const results = await foundry.documents.modifyBatch(batch);
+    return results.filter((result, index) => batch[index].action === "create").flat();
   }
 
   /* -------------------------------------------- */
