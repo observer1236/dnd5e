@@ -69,8 +69,8 @@ export default class TraitConfig extends AdvancementConfig {
   /* -------------------------------------------- */
 
   /**
-   * Index of the selected configuration, `-1` means `grants` array, any other number is equal
-   * to an index in `choices` array.
+   * Index of the selected configuration: `-2` means `replacementPool`, `-1` means `grants`, and non-negative
+   * numbers refer to an index in `choices`.
    * @type {number}
    */
   selected;
@@ -90,7 +90,8 @@ export default class TraitConfig extends AdvancementConfig {
    * @type {Set<string>}
    */
   get types() {
-    const pool = this.selected === -1 ? this.config.grants : this.config.choices[this.selected].pool;
+    const pool = this.selected === -2 ? this.config.replacementPool
+      : this.selected === -1 ? this.config.grants : this.config.choices[this.selected].pool;
     return this.advancement.representedTraits([pool]);
   }
 
@@ -101,6 +102,7 @@ export default class TraitConfig extends AdvancementConfig {
   /** @inheritDoc */
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
+    if ( !this.config.allowReplacements && (this.selected === -2) ) this.selected = -1;
 
     context.grants = {
       label: Trait.localizedList({ grants: this.config.grants }) || "—",
@@ -112,8 +114,15 @@ export default class TraitConfig extends AdvancementConfig {
       data: choice,
       selected: this.selected === index
     }));
-    const chosen = (this.selected === -1) ? context.grants.data : context.choices[this.selected].data.pool;
-    if ( this.selected !== -1 ) context.count = {
+    context.replacements = {
+      label: Trait.localizedList({ grants: this.config.replacementPool })
+        || _loc("DND5E.ADVANCEMENT.Trait.AnyReplacement"),
+      data: this.config.replacementPool,
+      selected: this.selected === -2
+    };
+    const chosen = this.selected === -2 ? context.replacements.data
+      : this.selected === -1 ? context.grants.data : context.choices[this.selected].data.pool;
+    if ( this.selected >= 0 ) context.count = {
       field: context.configuration.fields.choices.element.fields.count,
       value: context.choices[this.selected]?.data.count
     };
@@ -121,6 +130,7 @@ export default class TraitConfig extends AdvancementConfig {
 
     const rep = this.advancement.representedTraits();
     context.disableAllowReplacements = rep.size > 1;
+    if ( (this.selected === -2) && (rep.size === 1) && !rep.has(this.trait) ) this.trait = rep.first();
     const traitConfig = rep.size === 1 ? CONFIG.DND5E.traits[rep.first()] : null;
     if ( traitConfig ) {
       context.default.title = traitConfig.labels.title;
@@ -143,6 +153,7 @@ export default class TraitConfig extends AdvancementConfig {
       typeOptions: Object.entries(CONFIG.DND5E.traits)
         .filter(([, config]) => ((this.config.mode === "default") || (this.config.mode === "mastery"
           ? config.mastery : config.expertise)) && (config.dataType !== Number))
+        .filter(([type]) => (this.selected !== -2) || !rep.size || rep.has(type))
         .map(([value, config]) => ({ value, label: config.labels.title }))
     };
 
@@ -255,6 +266,8 @@ export default class TraitConfig extends AdvancementConfig {
   async prepareConfigurationUpdate(configuration={}) {
     const choicesCollection = configuration.choices ?? foundry.utils.deepClone(this.config._source.choices);
     const grantsCollection = configuration.grants ?? foundry.utils.deepClone(this.config._source.grants);
+    const replacementPool = configuration.replacementPool
+      ?? foundry.utils.deepClone(this.config._source.replacementPool);
 
     // Remove choice
     if ( configuration.deleteChoice !== undefined ) {
@@ -266,8 +279,14 @@ export default class TraitConfig extends AdvancementConfig {
       const prefix = `${this.trait}:`;
       const filteredSelected = filteredKeys(configuration.checked);
 
+      // Update the replacement pool
+      if ( this.selected === -2 ) {
+        const filteredPrevious = replacementPool.filter(k => !k.startsWith(prefix));
+        configuration.replacementPool = [...filteredPrevious, ...filteredSelected];
+      }
+
       // Update grants
-      if ( this.selected === -1 ) {
+      else if ( this.selected === -1 ) {
         const filteredPrevious = grantsCollection.filter(k => !k.startsWith(prefix));
         configuration.grants = [...filteredPrevious, ...filteredSelected];
       }
@@ -294,6 +313,7 @@ export default class TraitConfig extends AdvancementConfig {
 
     configuration.choices = choicesCollection;
     configuration.grants ??= Array.from(grantsCollection);
+    configuration.replacementPool ??= Array.from(replacementPool);
 
     // If one of the expertise modes is selected, filter out any traits that are not of a valid type
     if ( (configuration.mode ?? this.config.mode) !== "default" ) {
@@ -301,6 +321,9 @@ export default class TraitConfig extends AdvancementConfig {
       const validTraitTypes = filteredKeys(CONFIG.DND5E.traits, c => c[checkKey]);
       configuration.grants = configuration.grants.filter(k => validTraitTypes.some(t => k.startsWith(t)));
       configuration.choices.forEach(c => c.pool = c.pool?.filter(k => validTraitTypes.some(t => k.startsWith(t))));
+      configuration.replacementPool = configuration.replacementPool.filter(k =>
+        validTraitTypes.some(t => k.startsWith(t))
+      );
     }
 
     return configuration;

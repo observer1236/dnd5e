@@ -123,8 +123,8 @@
  * @property {"grant"|"choice"} type  Whether this trait is automatically granted or is chosen from some options.
  * @property {number} [choiceIdx]     An index that groups each separate choice into the groups that they originally
  *                                    came from.
- * @property {SelectChoices} choices  The available traits to pick from. Grants have only 0 or 1, depending on whether
- *                                    the character already has the granted trait.
+ * @property {SelectChoices} choices  The available traits to pick from, including any permitted replacements if the
+ *                                    original options are exhausted.
  */
 
 /* -------------------------------------------- */

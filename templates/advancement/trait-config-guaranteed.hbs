@@ -17,3 +17,25 @@
         </li>
     </ul>
 </fieldset>
+
+{{#if configuration.data.allowReplacements}}
+<fieldset class="selected-trait">
+    <legend>{{ localize "DND5E.ADVANCEMENT.Trait.FIELDS.replacementPool.label" }}</legend>
+    <div class="form-group">
+        <p class="hint">{{ localize "DND5E.ADVANCEMENT.Trait.FIELDS.replacementPool.hint" }}</p>
+    </div>
+    <ul class="unlist">
+        <li>
+            <label {{~#if replacements.selected}} class="selected"{{/if}}>
+                <input type="radio" name="selectedIndex" value="-2" {{ checked replacements.selected }}>
+                {{#if replacements.selected}}
+                <i class="fa-solid fa-arrow-right-long"></i>
+                {{else}}
+                <i class="fa-solid fa-gear"></i>
+                {{/if}}
+                <span>{{ replacements.label }}</span>
+            </label>
+        </li>
+    </ul>
+</fieldset>
+{{/if}}

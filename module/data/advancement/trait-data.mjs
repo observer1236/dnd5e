@@ -41,7 +41,8 @@ export class TraitConfigurationData extends foundry.abstract.DataModel {
         pool: new SetField(new StringField())
       })),
       grants: new SetField(new StringField(), { required: true }),
-      mode: new StringField({ required: true, blank: false, initial: "default" })
+      mode: new StringField({ required: true, blank: false, initial: "default" }),
+      replacementPool: new SetField(new StringField(), { required: true })
     };
   }
 
@@ -55,6 +56,9 @@ export class TraitConfigurationData extends foundry.abstract.DataModel {
     const version = dnd5e.settings.rulesVersion;
     const languageMap = LANGUAGE_MAP[version] ?? {};
     if ( source.grants?.length ) source.grants = source.grants.map(t => languageMap[t] ?? t);
+    if ( source.replacementPool?.length ) {
+      source.replacementPool = source.replacementPool.map(t => languageMap[t] ?? t);
+    }
     if ( source.choices?.length ) source.choices.forEach(c => {
       if ( !c.pool ) c.pool = [];
       if ( !Array.isArray(c.pool) ) c.pool = Object.values(c.pool);

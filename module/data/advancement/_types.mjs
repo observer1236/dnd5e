@@ -198,11 +198,13 @@
 
 /**
  * @typedef TraitAdvancementConfigurationData
- * @property {boolean} allowReplacements  Whether all potential choices should be presented to the user if there
+ * @property {boolean} allowReplacements  Whether replacement choices should be presented to the user if there
  *                                        are no more choices available in a more limited set.
  * @property {TraitChoice[]} choices      Choices presented to the user.
  * @property {string[]} grants            Keys for traits granted automatically.
  * @property {string} mode                Method by which this advancement modifies the actor's traits.
+ * @property {string[]} replacementPool   Traits available as replacements. An empty pool allows any trait of the
+ *                                        same type.
  */
 
 /**

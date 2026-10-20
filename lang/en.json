@@ -901,11 +901,12 @@
       "RemoveTrait": "Remove Trait",
       "SelectTrait": "Select Trait"
     },
+    "AnyReplacement": "Any trait of the same type",
     "ChoicesRemaining": "Select {count} more {type}",
     "Details": "Trait Details",
     "FIELDS": {
       "allowReplacements": {
-        "hint": "If a trait is already set on the actor, allow the player to choose from any other trait as a replacement.",
+        "hint": "If a trait is already set on the actor, allow the player to choose a replacement from the replacement pool, or any other trait of the same type if the pool is empty.",
         "label": "Allow Replacements"
       },
       "choices": {
@@ -926,6 +927,10 @@
       },
       "mode": {
         "label": "Mode"
+      },
+      "replacementPool": {
+        "hint": "The following traits can replace unavailable grants or choices. Leave empty to allow any other trait of the same type.",
+        "label": "Replacement Pool"
       }
     },
     "Hint": "Grant a character certain traits or give them an option to select traits (such as proficiencies, skills, languages).",

@@ -141,7 +141,8 @@ export default class TraitAdvancement extends Advancement {
     for ( const { choices } of available ) {
       const set = choices.asSet();
       if ( set.size === 1 ) chosen.add(set.first());
-      else if ( !initial && ((set.size > 1) || this.configuration.allowReplacements) ) return false;
+      else if ( !initial && ((set.size > 1)
+        || (this.configuration.allowReplacements && !this.configuration.replacementPool.size)) ) return false;
     }
     return { chosen: Array.from(chosen) };
   }
@@ -270,7 +271,8 @@ export default class TraitAdvancement extends Advancement {
 
     // If replacements are allowed and there are grants with zero choices from their limited set,
     // display all remaining choices as an option
-    if ( this.configuration.allowReplacements && (unfilteredLength > available.length) ) {
+    if ( this.configuration.allowReplacements && !this.configuration.replacementPool.size
+      && (unfilteredLength > available.length) ) {
       const rep = this.representedTraits();
       if ( rep.size === 1 ) return {
         choices: choices.filter(this.representedTraits().map(t => `${t}:*`), { inplace: false }),
@@ -339,13 +341,35 @@ export default class TraitAdvancement extends Advancement {
 
     available.sort((lhs, rhs) => lhs.choices.asSet().size - rhs.choices.asSet().size);
 
-    // Remove any fulfilled grants
-    for ( const key of selected.item ) available.findSplice(grant => grant.choices.asSet().has(key));
+    // Match original grants before assigning any chosen replacements to the remaining slots.
+    const unmatched = new Set(selected.item);
+    for ( const key of selected.item ) {
+      if ( available.findSplice(grant => grant.choices.asSet().has(key)) ) unmatched.delete(key);
+    }
 
     // Merge all possible choices into a single SelectChoices
     const allChoices = await Trait.mixedChoices(actorData.available);
     allChoices.exclude(new Set([...(selected.actor ?? []), ...selected.item]));
-    available.forEach(a => a.choices = allChoices.filter(a.choices, { inplace: false }));
+
+    // A configured pool replaces only exhausted slots, and remains restricted when that pool is exhausted too.
+    let replacements;
+    if ( this.configuration.allowReplacements && this.configuration.replacementPool.size ) {
+      const rep = this.representedTraits();
+      if ( rep.size === 1 ) {
+        replacements = await Trait.mixedChoices(this.configuration.replacementPool);
+        replacements.filter(new Set([`${rep.first()}:*`]));
+        replacements.filter(new Set([...actorData.available, ...unmatched]));
+      }
+    }
+    available.forEach(a => {
+      a.choices = allChoices.filter(a.choices, { inplace: false });
+      if ( a.choices.isEmpty && replacements ) a.choices = replacements.clone();
+    });
+
+    if ( replacements ) {
+      for ( const key of unmatched ) available.findSplice(grant => grant.choices.asSet().has(key));
+      available.forEach(a => a.choices.exclude(selected.item));
+    }
 
     return { available, choices: allChoices };
   }
